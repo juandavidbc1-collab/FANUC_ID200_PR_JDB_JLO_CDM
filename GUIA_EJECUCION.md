@@ -3,24 +3,32 @@
 Universidad EIA — Robótica Industrial — Parcial No. 2
 Workspace: `~/ws_fanuc` — ROS 2 Jazzy
 
+Todos los nodos están empaquetados en `fanuc_lrmate200id_taller` y se ejecutan
+con `ros2 run`.
+
 ---
 
 ## 0. Preparación (una sola vez)
 
-Si las gráficas no se abren en ventana:
+Compilar el workspace:
 
 ```bash
-cd ~/ws_fanuc/scripts
-for f in perfiles.py cart2.py cart4d.py; do
-  sed -i 's/matplotlib.use("Agg")/matplotlib.use("TkAgg")/' $f
-  grep -q "plt.show()" $f || echo "plt.show()" >> $f
-done
+cd ~/ws_fanuc
+colcon build
+source install/setup.bash
 ```
 
-Si sale `No module named 'tkinter'`:
+Si sale `No module named 'tkinter'` al abrir gráficas:
 
 ```bash
 sudo apt install python3-tk
+```
+
+Para no repetir los `source` en cada terminal nueva:
+
+```bash
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+echo "source ~/ws_fanuc/install/setup.bash" >> ~/.bashrc
 ```
 
 ---
@@ -44,27 +52,28 @@ Esperar a que abra RViz y los logs se calmen.
 cd ~/ws_fanuc
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-python3 scripts/scene.py
+ros2 run fanuc_lrmate200id_taller ros2_scene
 ```
 
 Debe imprimir `escena aplicada: True` y aparecer las cajas verdes en RViz.
 
-> **Importante:** la escena se borra cada vez que se reinicia `demo.launch.py`.
-> Si hay fallos raros de planeación, lo primero es volver a correr `scene.py`.
+> **Importante:** la escena vive en la memoria de `move_group` y se borra cada
+> vez que se reinicia `demo.launch.py`. Ante fallos raros de planeación, lo
+> primero es volver a ejecutar `ros2_scene`.
 
 ---
 
 ## Parte 2 — Transformación homogénea en HOME
 
 ```bash
-python3 scripts/mover.py home
+ros2 run fanuc_lrmate200id_taller ros2_mover home
 ros2 run tf2_ros tf2_echo base_link flange
 ```
 
 Resultado esperado: `Translation: [0.465, 0.000, 0.695]` con rotación identidad.
 Cortar con `Ctrl+C`.
 
-Luego en MATLAB, con `q = [0 0 0 0 0 0]` y
+Luego en MATLAB (`matlab/MatrixTDH.m`), con `q = [0 0 0 0 0 0]` y
 `T_ROS = [1 0 0 0.465; 0 1 0 0; 0 0 1 0.695; 0 0 0 1]`.
 Los errores deben salir del orden de 1e-16.
 
@@ -75,18 +84,17 @@ Los errores deben salir del orden de 1e-16.
 ## Parte 3 — Cinemática inversa de las poses clave
 
 ```bash
-cd ~/ws_fanuc
-python3 scripts/ik4.py
+ros2 run fanuc_lrmate200id_taller ros2_ik
 ```
 
-Devuelve los cuatro vectores articulares:
+Poses definidas (efector apuntando hacia abajo):
 
-| Pose | Coordenadas (x, y, z) |
-|---|---|
-| pre_pick | 0.40, −0.25, 0.43 |
-| pick | 0.40, −0.25, 0.28 |
-| pre_place | 0.40, 0.30, 0.43 |
-| place | 0.40, 0.30, 0.28 |
+| Pose | x | y | z |
+|---|---|---|---|
+| pre_pick | 0.40 | −0.25 | 0.43 |
+| pick | 0.40 | −0.25 | 0.28 |
+| pre_place | 0.40 | 0.30 | 0.43 |
+| place | 0.40 | 0.30 | 0.28 |
 
 Verificación en MATLAB para cada pose, cambiando dos líneas:
 
@@ -96,27 +104,26 @@ T_ROS = [-1 0 0 0.40; 0 1 0 -0.25; 0 0 -1 0.28; 0 0 0 1];   % ejemplo: pick
 ```
 
 La orientación `diag(−1, 1, −1)` corresponde al giro de 180° sobre Y
-(cuaternión xyzw = 0, 1, 0, 0) con el efector apuntando hacia abajo.
+(cuaternión xyzw = 0, 1, 0, 0). La última columna son las coordenadas de la
+tabla de arriba: es lo único que cambia entre las cuatro poses.
 
 ---
 
 ## Parte 4A — Comparación de planeadores
 
 ```bash
-python3 scripts/cmp2.py
+ros2 run fanuc_lrmate200id_taller ros2_planners
 ```
 
 Tarda aproximadamente un minuto (10 repeticiones por planeador).
 
-Resultados de referencia:
-
 | | RRTConnect | RRT* |
 |---|---|---|
-| Éxitos | 10/10 | 4/10 |
-| Tiempo | 0.0139 s | 2.0011 s |
-| Long. articular | 7.744 rad | 3.890 rad |
-| Long. cartesiana | 0.940 m | 0.678 m |
-| Rugosidad | 0.00563 | 0.00298 |
+| Éxitos | **10/10** | 4/10 |
+| Tiempo | **0.0139 s** | 2.0011 s |
+| Long. articular | 7.744 rad | **3.890 rad** |
+| Long. cartesiana | 0.940 m | **0.678 m** |
+| Rugosidad | 0.00563 | **0.00298** |
 
 **Planeador elegido: RRTConnect**, por confiabilidad. RRT* produce caminos más
 cortos y suaves, pero falla el 60% de los intentos con el obstáculo presente.
@@ -126,27 +133,28 @@ cortos y suaves, pero falla el 60% de los intentos con el obstáculo presente.
 ## Parte 4B — Perfiles cúbico y quíntico
 
 ```bash
-python3 scripts/perfiles.py
+ros2 run fanuc_lrmate200id_taller ros2_perfiles
 ```
 
 Abre una ventana con posición, velocidad y aceleración cartesiana.
-**Cerrar la ventana para que el script termine.**
+**Cerrar la ventana para que el nodo termine.**
 
 Restricciones tramo rojo: 0.200 m/s, 0.300 m/s² → T = 1.7321 s
+(la restricción activa es la aceleración).
 
 ```bash
-python3 scripts/cart2.py
+ros2 run fanuc_lrmate200id_taller ros2_cart4b
 ```
 
-Genera `traj_4B.npz` y abre la gráfica de velocidad/aceleración articular.
-
-Resultados de referencia:
+Genera `traj_4B.npz` en `/tmp/taller_ri/` y abre la gráfica articular.
 
 | | cúbico | quíntico |
 |---|---|---|
-| \|q̇\| máx | 0.3509 rad/s | 0.4384 rad/s |
-| \|q̈\| máx | 0.7827 rad/s² | 0.7971 rad/s² |
-| ∫a² dt | 0.5670 | 0.8775 |
+| v_max cartesiana | 0.1299 m/s | 0.1624 m/s |
+| a_max cartesiana | 0.3000 m/s² | 0.2887 m/s² |
+| \|q̇\| máx | **0.3509 rad/s** | 0.4384 rad/s |
+| \|q̈\| máx | **0.7827 rad/s²** | 0.7971 rad/s² |
+| ∫a² dt | **0.5670** | 0.8775 |
 
 **Perfil elegido: quíntico.** El cúbico tiene menores magnitudes, pero presenta
 discontinuidad de aceleración en los extremos (jerk no acotado), lo que produce
@@ -158,7 +166,7 @@ con aceleración nula.
 ## Parte 4D — Tramo azul
 
 ```bash
-python3 scripts/cart4d.py
+ros2 run fanuc_lrmate200id_taller ros2_cart4d
 ```
 
 Restricciones tramo azul: 0.100 m/s, 0.020 m/s² → T = 6.5804 s
@@ -170,19 +178,18 @@ El mismo desplazamiento de 15 cm dura casi 4× más que en 4B.
 
 ## Parte 5 — Jacobiano
 
-Requiere que `traj_4B.npz` exista (correr `cart2.py` antes).
+Requiere que existan `traj_4B.npz` y `traj_4D.npz` en `/tmp/taller_ri/`,
+generados por `ros2_cart4b` y `ros2_cart4d`.
 
 ```bash
-python3 scripts/jacobiano.py
+ros2 run fanuc_lrmate200id_taller ros2_jacobian
 ```
-
-Resultados de referencia:
 
 - Jacobiano analítico vs numérico: error 2.3e-7 en las cuatro configuraciones
 - Verificación ẋ = J·q̇ sobre 4B: error RMS 1.1e-4 m/s
 - v_max = 0.16215 m/s < 0.200 m/s → cumple
 
-En MATLAB, bloque adicional antes de `function T_ij = T_DH(...)`:
+En MATLAB (`matlab/Jacobiano.m`), bloque antes de `function T_ij = T_DH(...)`:
 
 ```matlab
 J = jacobiano_dh(T, T_corr, frame);
@@ -209,58 +216,79 @@ end
 end
 ```
 
+**Nota:** HOME es una configuración singular. Las columnas 4 y 6 son paralelas
+(J4 y J6 comparten eje), por lo que `det(J·Jᵀ) = 0` y el número de condición se
+dispara. Conviene comparar también en `pre_pick`, donde el Jacobiano es de
+rango completo.
+
 ---
 
 ## Ciclo completo — animación para el video
 
 ```bash
-python3 scripts/ciclo.py
+ros2 run fanuc_lrmate200id_taller ros2_ciclo
 ```
 
 Secuencia: HOME → 4A → 4B → retirada → 4C → 4D → retirada → HOME.
 Ocho `error=1` significan ciclo limpio. Dura unos 30 s.
 
-Para ralentizar la grabación:
-
-```bash
-sed -i 's/= 0.10/= 0.05/g' scripts/ciclo.py
-```
-
 ---
 
-## Ejecución encadenada (sin gráficas)
+## Ejecutables del paquete
 
-Para verificar todo de una pasada, volviendo temporalmente a modo `Agg`:
-
-```bash
-cd ~/ws_fanuc/scripts
-for f in perfiles.py cart2.py cart4d.py; do
-  sed -i 's/matplotlib.use("TkAgg")/matplotlib.use("Agg")/' $f
-done
-cd ~/ws_fanuc
-python3 scripts/scene.py && python3 scripts/ik4.py && \
-python3 scripts/perfiles.py && python3 scripts/cart2.py && \
-python3 scripts/cart4d.py && python3 scripts/jacobiano.py && \
-python3 scripts/cmp2.py
-```
-
-Si algo falla, la cadena se detiene en ese punto.
-
----
-
-## Tabla de referencia rápida
-
-| Script | Parte | Genera |
+| Comando (`ros2 run fanuc_lrmate200id_taller ...`) | Parte | Necesita simulación |
 |---|---|---|
-| `scene.py` | 4 | Escena de colisión |
-| `mover.py` | — | Movimiento libre a una pose |
-| `ik4.py` | 3 | Ángulos de las 4 poses |
-| `cmp2.py` | 4A | Comparación de planeadores |
-| `perfiles.py` | 4B | `perfiles_4B.png`, waypoints CSV |
-| `cart2.py` | 4B | `traj_4B.npz`, `articular_4B.png` |
-| `cart4d.py` | 4D | `traj_4D.npz`, `articular_4D.png` |
-| `jacobiano.py` | 5 | Jacobiano y verificación de velocidades |
-| `ciclo.py` | 4 | Animación completa |
+| `ros2_scene` | 4 | Sí |
+| `ros2_mover <pose>` | — | Sí |
+| `ros2_ik` | 3 | Sí |
+| `ros2_planners` | 4A | Sí |
+| `ros2_perfiles` | 4B | No |
+| `ros2_cart4b` | 4B | Sí |
+| `ros2_cart4d` | 4D | Sí |
+| `ros2_jacobian` | 5 | No |
+| `ros2_ciclo` | 4 | Sí |
+
+Poses válidas para `ros2_mover`: `home`, `pre_pick`, `pick`, `pre_place`,
+`place`. Sin argumento ejecuta la secuencia completa.
+
+---
+
+## Secuencia completa de verificación
+
+Con `demo.launch.py` corriendo:
+
+```bash
+ros2 run fanuc_lrmate200id_taller ros2_scene
+ros2 run fanuc_lrmate200id_taller ros2_ik
+ros2 run fanuc_lrmate200id_taller ros2_perfiles
+ros2 run fanuc_lrmate200id_taller ros2_cart4b
+ros2 run fanuc_lrmate200id_taller ros2_cart4d
+ros2 run fanuc_lrmate200id_taller ros2_jacobian
+ros2 run fanuc_lrmate200id_taller ros2_planners
+ros2 run fanuc_lrmate200id_taller ros2_ciclo
+```
+
+Los nodos con gráfica esperan a que se cierre la ventana antes de terminar.
+
+---
+
+## Archivos generados
+
+Se guardan en `/tmp/taller_ri/`:
+
+| Archivo | Generado por |
+|---|---|
+| `perfiles_4B.png` | `ros2_perfiles` |
+| `wp_cubico.csv`, `wp_quintico.csv` | `ros2_perfiles` |
+| `traj_4B.npz`, `articular_4B.png` | `ros2_cart4b` |
+| `traj_4D.npz`, `articular_4D.png` | `ros2_cart4d` |
+
+`/tmp` se borra al reiniciar el equipo. Para conservar resultados:
+
+```bash
+mkdir -p ~/ws_fanuc/resultados
+cp /tmp/taller_ri/* ~/ws_fanuc/resultados/
+```
 
 ---
 
@@ -268,11 +296,16 @@ Si algo falla, la cadena se detiene en ese punto.
 
 | Síntoma | Causa | Solución |
 |---|---|---|
-| `error = 99999` o `-2` al planear | Escena no aplicada o meta en colisión | `python3 scripts/scene.py` |
+| `Package not found` | Terminal sin sourcear | `source ~/ws_fanuc/install/setup.bash` |
+| El nodo se queda colgado sin imprimir | Espera un servicio de MoveIt | Levantar `demo.launch.py` |
+| `error = 99999` o `-2` al planear | Escena no aplicada | `ros2_scene` |
 | `GOAL_STATE_INVALID` en el log | El obstáculo toca al robot en la meta | Revisar posición del poste |
-| `FileNotFoundError: traj_4B.npz` | No se corrió `cart2.py` antes | Correr `cart2.py` |
-| El script parece colgado tras la gráfica | `plt.show()` espera | Cerrar la ventana |
-| RRT* siempre tarda ~12 ms | Falta `ompl_planning.yaml` | Verificar que exista en `config/` |
+| `FileNotFoundError: traj_4B.npz` | Falta correr `ros2_cart4b` | Ejecutarlo primero |
+| El nodo no termina tras la gráfica | `plt.show()` espera | Cerrar la ventana |
+| La gráfica no abre, solo guarda | El código quedó en modo `Agg` | Cambiar a `TkAgg` y recompilar |
+| Cambios que no surten efecto | Falta recompilar o sourcear | `colcon build` + `source install/setup.bash` |
+| RRT* siempre tarda ~12 ms | Falta `ompl_planning.yaml` | Verificar `config/` |
+| El robot no se mueve, solo el fantasma | `Loop Animation` activo en RViz | Desactivar en *Planned Path* |
 | `error = 1` | **No es error: es éxito** | MoveIt usa SUCCESS = 1 |
 
 ---
